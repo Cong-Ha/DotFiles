@@ -92,8 +92,8 @@ window_effects:
       enabled: false
       style: 'square'
     transparency:
-      enabled: false
-      opacity: '0%'
+      enabled: true
+      opacity: '65%'
 
 window_behavior:
   # New windows are created in this state whenever possible.
@@ -152,6 +152,8 @@ window_rules:
         window_class: { regex: 'Chrome_WidgetWin_1|MozillaDialogClass' }
 
       # Ignore rules for various 3rd-party apps.
+      - window_process: { equals: 'VALORANT-Win64-Shipping' }
+      - window_process: { equals: 'RiotClientServices' }
       - window_process: { equals: 'PowerToys' }
         window_class: { regex: 'HwndWrapper\[PowerToys\.PowerAccent.*?\]' }
       - window_process: { equals: 'PowerToys' }
