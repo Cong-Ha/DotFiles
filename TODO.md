@@ -55,5 +55,5 @@ Get-Item "$env:USERPROFILE\.glzr\glazewm\config.yaml",
 Each row should show `LinkType = SymbolicLink` and `Target` pointing into
 `RiderProjects\DotFiles\`.
 
-Reload GlazeWM (`alt+shift+r`), restart Zebar, and relaunch WezTerm to
+Reload GlazeWM (`lalt+ralt+shift+r`), restart Zebar, and relaunch WezTerm to
 confirm they pick up the linked files correctly.
