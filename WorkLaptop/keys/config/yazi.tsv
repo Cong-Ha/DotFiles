@@ -1,0 +1,81 @@
+Move	k / Up	Previous file
+Move	j / Down	Next file
+Move	h / Left	Parent directory
+Move	l / Right	Child directory
+Move	H	Back in history
+Move	L	Forward in history
+Move	gg / Home	Top
+Move	G / End	Bottom
+Move	Ctrl+u / Ctrl+d	Half page up / down
+Move	Ctrl+b / Ctrl+f	Full page up / down
+Go to	gh	Home directory
+Go to	gc	~/.config
+Go to	gd	Downloads
+Go to	gt	Trash bin
+Go to	gf	Follow the hovered symlink
+Go to	g Space	Jump interactively
+Search	s	Search files by name (fd)
+Search	S	Search files by content (ripgrep)
+Search	z	Jump to a file or directory (fzf)
+Search	Z	Jump to a directory (zoxide)
+Search	Ctrl+s	Cancel the running search
+Select	Space	Toggle the selection
+Select	v	Visual mode
+Select	V	Visual unset mode
+Select	Ctrl+a	Select all
+Select	Ctrl+r	Invert the selection
+Select	Esc	Clear the selection
+Files	o / Enter	Open
+Files	O	Open with
+Files	y	Copy
+Files	x	Cut
+Files	p	Paste
+Files	P	Paste and overwrite
+Files	Y / X	Cancel the yank
+Files	-	Symlink, absolute path
+Files	_	Symlink, relative path
+Files	Ctrl+-	Hardlink
+Files	d	Trash
+Files	D	Delete permanently
+Files	a	Create a file (end with / for a directory)
+Files	A	Bulk create
+Files	r	Rename
+Preview	K / J	Seek 5 units up / down
+Preview	Tab	Spot the hovered file
+Find	f	Filter
+Find	/	Find next
+Find	?	Find previous
+Find	n / N	Next / previous match
+Find	.	Toggle hidden files
+Copy path	cc	File path
+Copy path	cC	File URL
+Copy path	cd	Directory path
+Copy path	cD	Directory URL
+Copy path	cf	Filename
+Copy path	cn	Filename without extension
+Sort	,a / ,A	Alphabetical, reversed with the capital
+Sort	,n / ,N	Natural
+Sort	,e / ,E	Extension
+Sort	,s / ,S	Size
+Sort	,m / ,M	Modified time
+Sort	,b / ,B	Birth time
+Sort	,r	Random
+Line mode	ms	Show size
+Line mode	mp	Show permissions
+Line mode	mm	Show mtime
+Line mode	mb	Show btime
+Line mode	mo	Show owner
+Line mode	mn	Show none
+Tabs	tt	New tab in the current directory
+Tabs	tr	Rename the tab
+Tabs	1 - 9	Switch to that tab
+Tabs	[ / ]	Previous / next tab
+Tabs	{ / }	Swap with the previous / next tab
+Tabs	Ctrl+c	Close the tab, or quit on the last one
+Shell	;	Run a command
+Shell	:	Run a command and wait
+Shell	w	Task manager
+Exit	q	Quit and export the directory
+Exit	Q	Quit without export
+Exit	Ctrl+z	Suspend
+Exit	~ / F1	Help

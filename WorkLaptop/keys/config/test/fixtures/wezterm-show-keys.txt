@@ -1,0 +1,19 @@
+Default key table
+-----------------
+
+	CTRL                 Tab          ->   ActivateTabRelative(1)
+	SHIFT | CTRL         Tab          ->   ActivateTabRelative(-1)
+	SHIFT | CTRL         -            ->   SplitVertical(SpawnCommand domain=CurrentPaneDomain)
+	CTRL                 I            ->   PaneSelect(PaneSelectArguments { alphabet: "", mode: Activate, show_pane_ids: false })
+	CTRL                 V            ->   PasteFrom(Clipboard)
+	CTRL                 W            ->   CloseCurrentPane { confirm: true }
+	CTRL                 T            ->   SpawnTab(CurrentPaneDomain)
+	SHIFT | CTRL         \            ->   SplitHorizontal(SpawnCommand domain=CurrentPaneDomain)
+	SHIFT | CTRL         LeftArrow    ->   ActivatePaneDirection(Left)
+	SHIFT | ALT | CTRL   LeftArrow    ->   AdjustPaneSize(Left, 3)
+
+Key Table: copy_mode
+--------------------
+
+	        Tab          ->   CopyMode(MoveForwardWord)
+	        w            ->   CopyMode(MoveForwardWord)
