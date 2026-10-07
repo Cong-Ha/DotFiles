@@ -1,0 +1,13 @@
+general:
+  startup_commands: ['shell-exec zebar']
+
+keybindings:
+  # Shift focus in a given direction.
+  - commands: ['focus --direction left']
+    bindings: ['alt+h']
+  - commands: ['move --direction right', 'focus --direction right']
+    bindings: ['alt+shift+l', 'alt+shift+right']
+
+  # Pause.
+  - commands: ['wm-toggle-pause']
+    bindings: ['alt+shift+p']

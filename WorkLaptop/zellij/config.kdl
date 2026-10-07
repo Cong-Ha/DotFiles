@@ -1,0 +1,5 @@
+// Use Git Bash as the shell Zellij spawns, matching WezTerm's previous
+// default_prog. An interactive bash reads ~/.bashrc, which loads the
+// oh-my-posh prompt, so the prompt looks identical inside Zellij.
+// Forward slashes avoid KDL backslash-escaping.
+default_shell "C:/Program Files/Git/bin/bash.exe"

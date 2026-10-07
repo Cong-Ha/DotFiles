@@ -1,0 +1,209 @@
+#!/usr/bin/env bash
+# keys - show the keybindings of every program that has a provider.
+#
+# A provider is one script in $KEYS_HOME/providers that prints tab separated
+# rows: Group<TAB>Key<TAB>Action. A provider whose program is absent prints
+# nothing. To add a program, add one provider script. Nothing else changes.
+set -u
+
+KEYS_HOME="${KEYS_HOME:-$HOME/.config/keys}"
+PROVIDER_DIR="$KEYS_HOME/providers"
+export KEYS_HOME
+
+usage() {
+	cat <<'USAGE'
+usage: keys [options] [program ...]
+
+  -l          list the known programs
+  -s TEXT     keep only rows that contain TEXT (case-insensitive)
+  -p          plain output: program<TAB>group<TAB>key<TAB>action
+  -f          pick a row interactively with fzf
+  -h          this help
+
+examples:
+  keys                 every program
+  keys wezterm yazi    two programs
+  keys -s split        every binding about splits
+USAGE
+}
+
+list_providers() {
+	local f name
+	for f in "$PROVIDER_DIR"/*.sh; do
+		[ -e "$f" ] || continue
+		name="${f##*/}"
+		printf '%s\n' "${name%.sh}"
+	done | sort
+}
+
+plain=0
+use_fzf=0
+filter=""
+wanted=()
+
+while [ $# -gt 0 ]; do
+	case "$1" in
+		-l) list_providers; exit 0 ;;
+		-p) plain=1 ;;
+		-f) use_fzf=1 ;;
+		-s) shift; [ $# -gt 0 ] || { echo "keys: -s needs a value" >&2; exit 1; }; filter="$1" ;;
+		-h|--help) usage; exit 0 ;;
+		--) shift; while [ $# -gt 0 ]; do wanted+=("$1"); shift; done; break ;;
+		-*) echo "keys: unknown option $1" >&2; exit 1 ;;
+		*) wanted+=("$1") ;;
+	esac
+	shift
+done
+
+all=$(list_providers)
+[ -n "$all" ] || { echo "keys: no providers in $PROVIDER_DIR" >&2; exit 1; }
+
+if [ "${#wanted[@]}" -eq 0 ]; then
+	programs="$all"
+else
+	programs=""
+	for p in "${wanted[@]}"; do
+		if ! printf '%s\n' "$all" | grep -qx -- "$p"; then
+			echo "keys: unknown program '$p' (try: keys -l)" >&2
+			exit 1
+		fi
+		programs="$programs$p"$'\n'
+	done
+fi
+
+rows=""
+while IFS= read -r p; do
+	[ -n "$p" ] || continue
+	out="$(bash "$PROVIDER_DIR/$p.sh" 2>/dev/null)"
+	[ -n "$out" ] || continue
+	rows="$rows$(printf '%s\n' "$out" | awk -F'\t' -v prog="$p" 'NF>=3 { printf "%s\t%s\t%s\t%s\n", prog, $1, $2, $3 }')"$'\n'
+done <<< "$programs"
+
+rows="$(printf '%s' "$rows" | grep -v '^$' || true)"
+
+# Keep the rows of one group together, in the order the provider first used it.
+rows="$(printf '%s
+' "$rows" | awk -F'	' '
+{
+	p = $1; g = $2
+	if (!(p in pseen)) { pseen[p] = 1; porder[++np] = p }
+	key = p SUBSEP g
+	if (!(key in gseen)) { gseen[key] = 1; gorder[p, ++ng[p]] = g }
+	row[key, ++cnt[key]] = $0
+}
+END {
+	for (i = 1; i <= np; i++) {
+		p = porder[i]
+		for (j = 1; j <= ng[p]; j++) {
+			key = p SUBSEP gorder[p, j]
+			for (m = 1; m <= cnt[key]; m++) print row[key, m]
+		}
+	}
+}
+')"
+if [ -n "$filter" ]; then
+	rows="$(printf '%s\n' "$rows" | grep -i -- "$filter" || true)"
+fi
+[ -n "$rows" ] || exit 0
+
+if [ "$use_fzf" -eq 1 ]; then
+	if ! command -v fzf >/dev/null 2>&1; then
+		echo "keys: fzf is not installed" >&2
+		exit 1
+	fi
+	printf '%s\n' "$rows" | awk -F'\t' '{ printf "%-9s %-14s %-26s %s\n", $1, $2, $3, $4 }' | fzf --no-sort
+	exit 0
+fi
+
+if [ "$plain" -eq 1 ]; then
+	printf '%s\n' "$rows"
+	exit 0
+fi
+
+color=1
+[ -t 1 ] || color=0
+[ -n "${KEYS_NO_COLOR:-}" ] && color=0
+[ -n "${NO_COLOR:-}" ] && color=0
+
+width="${KEYS_WIDTH:-}"
+if [ -z "$width" ]; then
+	width="$(tput cols 2>/dev/null || true)"
+	[ -n "$width" ] || width=100
+fi
+
+printf '%s\n' "$rows" | awk -F'\t' -v color="$color" -v maxw="$width" '
+function repeat(s, n,   out) { out = ""; while (n-- > 0) out = out s; return out }
+function w(s) { return length(s) }
+# Break text into lines of at most width characters, on spaces where possible.
+function wrap(s, width, out,   n, line, i, m, word, parts) {
+	delete out
+	n = 0; line = ""
+	m = split(s, parts, " ")
+	for (i = 1; i <= m; i++) {
+		word = parts[i]
+		while (length(word) > width) {
+			if (line != "") { out[++n] = line; line = "" }
+			out[++n] = substr(word, 1, width)
+			word = substr(word, width + 1)
+		}
+		if (line == "") line = word
+		else if (length(line) + 1 + length(word) <= width) line = line " " word
+		else { out[++n] = line; line = word }
+	}
+	if (line != "") out[++n] = line
+	return n
+}
+{
+	prog = $1
+	if (!(prog in seen)) { seen[prog] = 1; order[++progs] = prog }
+	n = ++count[prog]
+	g[prog, n] = $2; k[prog, n] = $3; a[prog, n] = $4
+	if (w($2) > wg[prog]) wg[prog] = w($2)
+	if (w($3) > wk[prog]) wk[prog] = w($3)
+	if (w($4) > wa[prog]) wa[prog] = w($4)
+}
+END {
+	bold  = color ? "\033[1m" : ""
+	dim   = color ? "\033[2m" : ""
+	cyan  = color ? "\033[36m" : ""
+	reset = color ? "\033[0m" : ""
+
+	for (i = 1; i <= progs; i++) {
+		p = order[i]
+		if (w("Group") > wg[p]) wg[p] = w("Group")
+		if (w("Key")   > wk[p]) wk[p] = w("Key")
+		if (w("Action") > wa[p]) wa[p] = w("Action")
+		# the borders and padding of three columns cost 10 characters
+		cap = maxw - wg[p] - wk[p] - 10
+		if (cap < 20) cap = 20
+		if (wa[p] > cap) wa[p] = cap
+
+		bar1 = repeat("─", wg[p] + 2)
+		bar2 = repeat("─", wk[p] + 2)
+		bar3 = repeat("─", wa[p] + 2)
+
+		printf "\n%s%s%s\n", bold, p, reset
+		printf "%s┌%s┬%s┬%s┐%s\n", dim, bar1, bar2, bar3, reset
+		printf "%s│%s %s%-*s%s %s│%s %s%-*s%s %s│%s %s%-*s%s %s│%s\n", \
+			dim, reset, bold, wg[p], "Group", reset, \
+			dim, reset, bold, wk[p], "Key", reset, \
+			dim, reset, bold, wa[p], "Action", reset, dim, reset
+		printf "%s├%s┼%s┼%s┤%s\n", dim, bar1, bar2, bar3, reset
+
+		last = ""
+		for (j = 1; j <= count[p]; j++) {
+			shown = (g[p, j] == last) ? "" : g[p, j]
+			if (shown != "" && j > 1) printf "%s├%s┼%s┼%s┤%s\n", dim, bar1, bar2, bar3, reset
+			last = g[p, j]
+			lines = wrap(a[p, j], wa[p], chunk)
+			for (c = 1; c <= lines; c++) {
+				printf "%s│%s %-*s %s│%s %s%-*s%s %s│%s %-*s %s│%s\n", \
+					dim, reset, wg[p], (c == 1 ? shown : ""), \
+					dim, reset, cyan, wk[p], (c == 1 ? k[p, j] : ""), reset, \
+					dim, reset, wa[p], chunk[c], dim, reset
+			}
+		}
+		printf "%s└%s┴%s┴%s┘%s\n", dim, bar1, bar2, bar3, reset
+	}
+}
+'
