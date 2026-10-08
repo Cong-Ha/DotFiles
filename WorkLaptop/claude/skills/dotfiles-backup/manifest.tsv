@@ -1,0 +1,24 @@
+# Live path (relative to $HOME)	Repo path (relative to WorkLaptop/)
+# A trailing slash on the live path copies the whole folder.
+.wezterm.lua	wezterm/.wezterm.lua
+.wezterm-theme	wezterm/.wezterm-theme
+.glzr/glazewm/config.yaml	glazewm/config.yaml
+.glzr/glazewm/dynamic-bindings.ps1	glazewm/dynamic-bindings.ps1
+.glzr/zebar/settings.json	zebar/settings.json
+.glzr/zebar/.marketplace/	zebar/.marketplace
+.local/bin/keys	keys/bin/keys
+.config/keys/	keys/config
+.bashrc	bash/.bashrc
+.bash_profile	bash/.bash_profile
+.poshtheme	bash/.poshtheme
+Documents/PowerShell/Microsoft.PowerShell_profile.ps1	powershell/Microsoft.PowerShell_profile.ps1
+Documents/PowerShell/powershell.config.json	powershell/powershell.config.json
+AppData/Roaming/Zellij/config/config.kdl	zellij/config.kdl
+.gitconfig	git/.gitconfig
+.config/git/ignore	git/ignore
+AppData/Local/Packages/Microsoft.WindowsTerminal_8wekyb3d8bbwe/LocalState/settings.json	windows-terminal/settings.json
+AppData/Roaming/yazi/config/	yazi/config
+.claude/statusline.mjs	claude/statusline.mjs
+.claude/skills/simple-english/	claude/skills/simple-english
+.claude/skills/pr-description/	claude/skills/pr-description
+.claude/skills/dotfiles-backup/	claude/skills/dotfiles-backup
