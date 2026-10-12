@@ -16,6 +16,7 @@ Sync is manual. To apply a file, copy it to its live path.
 | `git/ignore` | `~/.config/git/ignore` |
 | `claude/statusline.mjs` | `~/.claude/statusline.mjs` |
 | `claude/plugins.json` | Merge into `~/.claude/settings.json` |
+| `gnome/tilingshell.ini` | dconf `/org/gnome/shell/extensions/tilingshell/` (see below) |
 | `WorkLaptop/keys/bin/keys` | `~/.local/bin/keys` |
 | `WorkLaptop/keys/config/` | `~/.config/keys/` |
 | `WorkLaptop/claude/skills/pr-description/`, `simple-english/` | `~/.claude/skills/` |
@@ -24,6 +25,7 @@ Notes:
 - `git/.gitconfig` has the email replaced with `<your-email>`. Set it after you copy the file.
 - `bash/dotfiles.sh` goes in `~/.bashrc.d/`, because Bazzite's `~/.bashrc` sources every file there. Do not replace `~/.bashrc`.
 - `wezterm/.wezterm-theme` and `bash/.poshtheme` are state files. The theme pickers in WezTerm (Ctrl+Shift+S and Ctrl+Shift+O) write them.
+- `gnome/tilingshell.ini` is a `dconf dump`, not a file on disk. It turns on auto-tiling and adds the `Halves` layout (two equal columns) on all workspaces.
 - The `dotfiles-backup` skill is not installed here. It backs up the Windows paths into `WorkLaptop/`.
 
 ## Differences from WorkLaptop
@@ -63,6 +65,19 @@ curl -fsSL https://github.com/ryanoasis/nerd-fonts/releases/latest/download/Hack
   | tar -xJ -C ~/.local/share/fonts/HackNerdFont --wildcards '*.ttf'
 fc-cache -f
 ```
+
+### Tiling Shell settings
+
+Tiling Shell comes with Bazzite. To save and load its settings:
+
+```sh
+# save
+dconf dump /org/gnome/shell/extensions/tilingshell/ > gnome/tilingshell.ini
+# load
+dconf load /org/gnome/shell/extensions/tilingshell/ < gnome/tilingshell.ini
+```
+
+Remove the `last-version-name-installed` and `overridden-settings` lines after you save. Tiling Shell writes them, and they are specific to one install.
 
 ### Claude Code plugins
 
