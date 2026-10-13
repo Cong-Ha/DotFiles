@@ -19,6 +19,7 @@ AppData/Roaming/Zellij/config/config.kdl	zellij/config.kdl
 AppData/Local/Packages/Microsoft.WindowsTerminal_8wekyb3d8bbwe/LocalState/settings.json	windows-terminal/settings.json
 AppData/Roaming/yazi/config/	yazi/config
 .claude/statusline.mjs	claude/statusline.mjs
+.claude/hooks/wez-state.sh	claude/hooks/wez-state.sh
 .claude/skills/simple-english/	claude/skills/simple-english
 .claude/skills/pr-description/	claude/skills/pr-description
 .claude/skills/dotfiles-backup/	claude/skills/dotfiles-backup
