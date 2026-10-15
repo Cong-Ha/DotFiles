@@ -37,6 +37,13 @@ $zebarGraceSec = 3
 $maxCrashes     = 5
 $crashWindowMin = 5
 
+# Display watcher: the supervisor loop already wakes every 5 s, and on each wake
+# it reads the display layout through GetSystemMetrics (one in-process call, no
+# child process). When the layout changes and then stays the same for this many
+# seconds, a fresh run of this script takes over and rebinds. The wait absorbs a
+# dock that attaches its screens one at a time.
+$displaySettleSec = 10
+
 $startMarker = '# >>> GENERATED-WORKSPACES-START <<<'
 $endMarker   = '# >>> GENERATED-WORKSPACES-END <<<'
 
@@ -240,6 +247,22 @@ function Get-ExitCode($proc) {
     try { return $proc.ExitCode } catch { return $null }
 }
 
+Add-Type -Namespace Glzr -Name Display -MemberDefinition '[DllImport("user32.dll")] public static extern int GetSystemMetrics(int nIndex);'
+
+# Monitor count plus the bounds of the virtual desktop. 80 = SM_CMONITORS,
+# 76-79 = SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN.
+# A dock change or a new arrangement in display settings changes this value.
+function Get-DisplayFingerprint {
+    return (@(80, 76, 77, 78, 79) | ForEach-Object { [Glzr.Display]::GetSystemMetrics($_) }) -join ','
+}
+
+# Hand over to a fresh run of this script, which probes again and rebinds. The new
+# run stops this supervisor through the PID file, so return right after the launch.
+function Start-Rebind {
+    Start-Process -FilePath 'powershell.exe' -WindowStyle Hidden -ArgumentList @(
+        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$PSCommandPath`"")
+}
+
 #endregion
 
 #region Supervisor
@@ -266,8 +289,27 @@ function Invoke-Supervisor {
         Start-Sleep -Seconds $zebarGraceSec
         Ensure-Zebar
 
-        # Poll rather than block, so an independent Zebar death is caught too.
-        while (-not $proc.WaitForExit(5000)) { Ensure-Zebar }
+        # Poll rather than block, so an independent Zebar death and a display
+        # change are caught too.
+        $pending      = $null
+        $pendingSince = $null
+        while (-not $proc.WaitForExit(5000)) {
+            Ensure-Zebar
+
+            $fp = Get-DisplayFingerprint
+            if ($fp -eq $script:displayBaseline) { $pending = $null; continue }
+            if ($fp -ne $pending) {
+                $pending      = $fp
+                $pendingSince = Get-Date
+                Write-Log "Display change seen: [$($script:displayBaseline)] to [$fp]. Waiting $displaySettleSec s for it to settle."
+                continue
+            }
+            if (((Get-Date) - $pendingSince).TotalSeconds -ge $displaySettleSec) {
+                Write-Log "Display layout settled at [$fp]. Handing over to a new run to rebind."
+                Start-Rebind
+                return 0
+            }
+        }
 
         $code = Get-ExitCode $proc
         if ($code -eq 0) {
@@ -332,7 +374,9 @@ for ($i = 0; $i -lt $mons.Count; $i++) {
 $laptop    = $indexed | Where-Object { $_.hw -eq $laptopHw } | Select-Object -First 1
 $laptopIdx = if ($laptop) { $laptop.index } else { $null }
 $signature = Get-Signature $indexed
-Write-Log "Monitors: [$signature]"
+# The watcher compares against the layout that these bindings come from.
+$script:displayBaseline = Get-DisplayFingerprint
+Write-Log "Monitors: [$signature] fingerprint [$($script:displayBaseline)]"
 
 # --- 3. Bind from the matching desk profile, else fall back to the generic rule ---
 $desk = $deskProfiles |

@@ -200,4 +200,38 @@ config.mouse_bindings = {
   },
 }
 
+-- === Session persistence ===
+-- New GUI windows connect to a local mux server. Panes live in the server, so
+-- they keep running when the window closes, and reattach on the next launch.
+-- To end all sessions, close the panes, or end wezterm-mux-server.exe.
+config.unix_domains = { { name = "unix" } }
+config.default_gui_startup_args = { "connect", "unix" }
+
+-- === Claude Code state badge ===
+-- The hook script ~/.claude/hooks/wez-state.sh sets the tab title to a badge
+-- through `wezterm cli set-tab-title`. Hooks have no tty on Windows, so OSC
+-- user vars cannot reach WezTerm. This handler shows the badge in front of the
+-- pane title, so the title that Claude Code sets stays visible.
+local claude_badges = { ["🔴"] = true, ["🟢"] = true }
+
+wezterm.on("format-tab-title", function(tab, _, _, cfg, _, max_width)
+  local pane_title = tab.active_pane.title
+  local title
+  if claude_badges[tab.tab_title] then
+    title = tab.tab_title .. " " .. pane_title
+  elseif tab.tab_title and #tab.tab_title > 0 then
+    title = tab.tab_title
+  else
+    title = pane_title
+  end
+
+  if cfg.show_tab_index_in_tab_bar ~= false then
+    local index = tab.tab_index
+    if not cfg.tab_and_split_indices_are_zero_based then index = index + 1 end
+    title = index .. ": " .. title
+  end
+
+  return " " .. wezterm.truncate_right(title, max_width - 2) .. " "
+end)
+
 return config

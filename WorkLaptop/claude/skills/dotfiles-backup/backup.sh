@@ -62,7 +62,15 @@ EOF
 
 # Scan for company data and secrets.
 pattern='korterra|kordev|@korterra|cloudId|accountId|OTEL_|9b1431bd|712020|token\s*[=:]|password\s*[=:]|apikey|bearer '
-if grep -rinE "$pattern" "$DEST" --exclude=backup.sh; then
+# archify is JavaScript, and it has hundreds of variables named token. For that
+# folder, the generic token and password terms change to real secret formats.
+archify_pattern='korterra|kordev|cloudId|accountId|OTEL_|9b1431bd|712020|apikey|bearer |sk-[A-Za-z0-9]{20,}|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|eyJ[A-Za-z0-9_-]{20,}\.|xox[bp]-'
+found=0
+grep -rinE "$pattern" "$DEST" --exclude=backup.sh --exclude-dir=archify && found=1
+if [[ -d "$DEST/claude/skills/archify" ]]; then
+  grep -rinE "$archify_pattern" "$DEST/claude/skills/archify" && found=1
+fi
+if [[ "$found" -eq 1 ]]; then
   echo "SCAN FAILED: remove the matches above before you commit."
   exit 2
 fi
