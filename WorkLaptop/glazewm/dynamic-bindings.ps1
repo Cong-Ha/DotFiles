@@ -481,9 +481,12 @@ if (-not (Start-Glaze)) {
 # The y tie-break matters for stacked screens. At the home desk the GN32DB sits
 # directly above the ULTRAGEAR+, so their x values differ by a single pixel and an
 # x-only sort lets a nudge in display settings swap two workspaces between them.
-$mons = (& $cli query monitors | ConvertFrom-Json).data.monitors |
+# The @() is load-bearing. With one monitor (undocked) the pipeline yields a single
+# object, and in Windows PowerShell 5.1 a single [pscustomobject] has no .Count, so
+# the loop below ran zero times and every undock logged "Monitors: []".
+$mons = @((& $cli query monitors | ConvertFrom-Json).data.monitors |
     Select-Object @{N='hw'; E={$_.hardwareId}}, @{N='x'; E={$_.x}}, @{N='y'; E={$_.y}} |
-    Sort-Object x, y
+    Sort-Object x, y)
 $indexed = @()
 for ($i = 0; $i -lt $mons.Count; $i++) {
     $indexed += [pscustomobject]@{ index = $i; hw = $mons[$i].hw; x = $mons[$i].x; y = $mons[$i].y }
