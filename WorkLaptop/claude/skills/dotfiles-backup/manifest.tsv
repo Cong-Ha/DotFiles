@@ -4,7 +4,6 @@
 .wezterm-theme	wezterm/.wezterm-theme
 .glzr/glazewm/config.yaml	glazewm/config.yaml
 .glzr/glazewm/dynamic-bindings.ps1	glazewm/dynamic-bindings.ps1
-.glzr/glazewm/dynamic-bindings.ps1.bak-20261015-144717	glazewm/dynamic-bindings.ps1.bak-20261015-144717
 .glzr/glazewm/capture-zebar-state.ps1	glazewm/capture-zebar-state.ps1
 .glzr/zebar/settings.json	zebar/settings.json
 .glzr/zebar/.marketplace/	zebar/.marketplace

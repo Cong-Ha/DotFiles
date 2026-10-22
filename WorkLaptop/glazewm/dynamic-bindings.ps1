@@ -13,6 +13,11 @@
 # Registered as a login startup item; can also be run manually any time after
 # docking/undocking to re-detect. A manual re-run takes over from the supervisor
 # already running, which is stopped first.
+#
+# Only one run at a time may probe, rewrite config.yaml and restart GlazeWM. A
+# second run that starts during that phase exits without changes. See
+# Enter-Setup. config.yaml is replaced atomically, and never written when its
+# marker pair is missing. See Set-WorkspacesBlock.
 
 # NOTE: deliberately NOT 'Stop'. Windows PowerShell 5.1 promotes native-command
 # stderr (e.g. GlazeWM's expected "Failed to connect to IPC server" while the
@@ -68,16 +73,69 @@ function Write-Log([string]$msg) {
 #region Config rewriting
 
 # Rewrite only the text between the two markers, preserving the rest of the file.
+# Returns $true when the new file is in place, $false when nothing was written.
+#
+# Two guards exist because this function once left config.yaml at 0 bytes. Four
+# runs started in the same second; one truncated the file to write it, another
+# read the empty file in that moment, found no markers, and wrote the empty text
+# back. Every later run then kept the file empty.
+#  - The file must hold exactly one marker pair, or nothing is written. An empty
+#    or damaged file is left for a person to restore, never made worse.
+#  - The new text goes to a temporary file, which then replaces config.yaml with
+#    one rename. A reader sees the old file or the new one, never a truncated
+#    or missing one, and a run killed mid-write damages only its temporary file.
+#    File.Replace is NOT used: it swaps through a backup name, and a reader in
+#    that gap gets "file not found".
+Add-Type -Namespace Glzr -Name FileOps -MemberDefinition @'
+[DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+public static extern bool MoveFileEx(string existingFileName, string newFileName, int flags);
+'@
+$MOVEFILE_REPLACE_EXISTING_WRITE_THROUGH = 0x1 -bor 0x8
+
 function Set-WorkspacesBlock([string]$body) {
     # Read as UTF-8 explicitly. Windows PowerShell 5.1's `Get-Content -Raw` reads
     # using the legacy ANSI codepage, which corrupts any non-ASCII byte on a
     # round-trip write. ReadAllText honors a BOM and defaults to UTF-8.
-    $raw = [System.IO.File]::ReadAllText($config)
+    # A read that fails on a sharing violation must not count as "no markers", or
+    # a busy moment would make this refuse a good file. Try again first.
+    $raw = $null
+    for ($try = 1; $null -eq $raw; $try++) {
+        try {
+            $raw = [System.IO.File]::ReadAllText($config)
+        } catch {
+            if ($try -ge 10) {
+                Write-Log "Could not read config.yaml after $try tries: $($_.Exception.Message)"
+                return $false
+            }
+            Start-Sleep -Milliseconds 200
+        }
+    }
+    $starts = [regex]::Matches($raw, [regex]::Escape($startMarker)).Count
+    $ends   = [regex]::Matches($raw, [regex]::Escape($endMarker)).Count
+    if ($starts -ne 1 -or $ends -ne 1) {
+        Write-Log "REFUSED to write config.yaml: it has $($raw.Length) bytes, $starts start and $ends end marker(s); one pair is required. Restore it from a backup."
+        return $false
+    }
+
     $pattern = "(?s)($([regex]::Escape($startMarker))\r?\n).*?(\s*$([regex]::Escape($endMarker)))"
     $new = [regex]::Replace($raw, $pattern, { param($m) $m.Groups[1].Value + $body + "`r`n  " + $endMarker })
+
     # Write UTF-8 WITHOUT a BOM. Windows PowerShell 5.1's `Set-Content -Encoding UTF8`
     # prepends a BOM that the YAML parser can choke on; this is host-agnostic.
-    [System.IO.File]::WriteAllText($config, $new, (New-Object System.Text.UTF8Encoding($false)))
+    $tmp = "$config.$PID.tmp"
+    [System.IO.File]::WriteAllText($tmp, $new, (New-Object System.Text.UTF8Encoding($false)))
+
+    # GlazeWM watches config.yaml and can hold it open for a moment while it
+    # reloads, which makes the rename fail with a sharing violation. Try again.
+    for ($try = 1; $try -le 10; $try++) {
+        if ([Glzr.FileOps]::MoveFileEx($tmp, $config, $MOVEFILE_REPLACE_EXISTING_WRITE_THROUGH)) { return $true }
+        $err = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
+        Start-Sleep -Milliseconds 200
+    }
+    $msg = (New-Object System.ComponentModel.Win32Exception($err)).Message
+    Write-Log "Could not replace config.yaml after 10 tries: $msg"
+    Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+    return $false
 }
 
 # Emission order is the number row: 1-9, then 0. Both the Zebar bar and
@@ -161,6 +219,37 @@ function Resolve-Target([string]$target, $mons) {
     $hits = @($mons | Where-Object { $_.hw -eq $hw } | Sort-Object index)
     if ($hits.Count -lt $nth) { return $null }
     return $hits[$nth - 1].index
+}
+
+#endregion
+
+#region Single instance
+
+# Held from the start of a run until its config writes and probe restart are done.
+# A run that cannot take it at once exits: the run that holds it is already doing
+# the same work. The lock is released before the supervisor loop, so a later
+# manual run, or a rebind after a dock change, can still take over from a
+# running supervisor through the PID file.
+$setupMutex = New-Object System.Threading.Mutex($false, 'Local\GlazeWM-dynamic-bindings-setup')
+
+function Enter-Setup {
+    try {
+        return $setupMutex.WaitOne(0)
+    } catch {
+        # A holder that was killed before it released the lock leaves it
+        # abandoned. Windows then hands it to the next caller, which is us.
+        $e = $_.Exception
+        while ($e) {
+            if ($e -is [System.Threading.AbandonedMutexException]) { return $true }
+            $e = $e.InnerException
+        }
+        Write-Log "Could not take the setup lock: $($_.Exception.Message)"
+        return $false
+    }
+}
+
+function Exit-Setup {
+    try { $setupMutex.ReleaseMutex() } catch { }
 }
 
 #endregion
@@ -274,15 +363,29 @@ function Start-Rebind {
 # deliberate shutdown (wm-exit, tray Exit) and ends the loop; anything else is a
 # crash and gets restarted.
 function Invoke-Supervisor {
-    $crashes  = New-Object System.Collections.ArrayList
-    $restarts = 0
+    $crashes     = New-Object System.Collections.ArrayList
+    $restarts    = 0
+    $ipcFailures = 0
 
     while ($true) {
         $proc = Start-Glaze
         if (-not $proc) {
-            Write-Log 'GlazeWM IPC never came up. Supervisor stopping.'
+            # Do not give up. A short wake from Modern Standby, with every screen
+            # dark, can make the daemon never answer. Stopping here once left
+            # GlazeWM down until the next login. Clear the half-started daemon, so
+            # it cannot block the next start with "Another instance is already
+            # running", then try again. The wait doubles each time, to a 5 min cap.
+            $ipcFailures++
+            $wait = [int][Math]::Min(300, 15 * [Math]::Pow(2, $ipcFailures - 1))
+            Write-Log "GlazeWM IPC never came up (attempt $ipcFailures). Trying again in $wait s."
+            Stop-Glaze
             Ensure-Zebar   # at least keep the bar, even with no WM
-            return 1
+            Start-Sleep -Seconds $wait
+            continue
+        }
+        if ($ipcFailures -gt 0) {
+            Write-Log "GlazeWM started after $ipcFailures failed attempt(s)."
+            $ipcFailures = 0
         }
 
         Write-Log "GlazeWM running (pid $($proc.Id)). Supervising."
@@ -342,7 +445,11 @@ function Invoke-Supervisor {
 
 #endregion
 
-# --- 0. Take over from any supervisor already running ---
+# --- 0. One run at a time, then take over from any supervisor already running ---
+if (-not (Enter-Setup)) {
+    Write-Log "Another run is already rebinding. This run (pid $PID) exits without changes."
+    exit 0
+}
 Stop-OtherSupervisors
 Set-Content -Path $pidFile -Value $PID -Encoding ASCII
 Write-Log "Supervisor starting (pid $PID)."
@@ -350,22 +457,36 @@ Write-Log "Supervisor starting (pid $PID)."
 # --- 1. Probe: start with binding-free workspaces so every monitor is detectable ---
 $probeLines = @('  # (probing monitors - regenerated below)')
 $workspaceOrder | ForEach-Object { $probeLines += "  - name: '$_'" }
-Set-WorkspacesBlock ($probeLines -join "`r`n")
+if (-not (Set-WorkspacesBlock ($probeLines -join "`r`n"))) {
+    # Leave GlazeWM exactly as it is. Restarting it on a damaged config would
+    # take the desktop down with nothing to bring it back.
+    Write-Log 'Probe config not written. Run stopped; GlazeWM left as it was.'
+    Exit-Setup
+    exit 1
+}
 
 Stop-Glaze
 if (-not (Start-Glaze)) {
-    Write-Log 'GlazeWM IPC never came up during probe.'
-    Ensure-Zebar
-    exit 1
+    # Do not exit: hand over to the supervisor, which keeps trying with a growing
+    # wait. No layout was read, so the display baseline stays empty. When GlazeWM
+    # does come up, the watcher sees a change at once and starts a fresh run,
+    # which probes again and binds the workspaces.
+    Write-Log 'GlazeWM IPC never came up during probe. Supervising without bindings until it starts.'
+    Stop-Glaze     # a half-started daemon would block the next start
+    Exit-Setup
+    exit (Invoke-Supervisor)
 }
 
 # --- 2. Read layout. GlazeWM monitor index = position sorted by x, then y. ---
 # The y tie-break matters for stacked screens. At the home desk the GN32DB sits
 # directly above the ULTRAGEAR+, so their x values differ by a single pixel and an
 # x-only sort lets a nudge in display settings swap two workspaces between them.
-$mons = (& $cli query monitors | ConvertFrom-Json).data.monitors |
+# The @() is load-bearing. With one monitor (undocked) the pipeline yields a single
+# object, and in Windows PowerShell 5.1 a single [pscustomobject] has no .Count, so
+# the loop below ran zero times and every undock logged "Monitors: []".
+$mons = @((& $cli query monitors | ConvertFrom-Json).data.monitors |
     Select-Object @{N='hw'; E={$_.hardwareId}}, @{N='x'; E={$_.x}}, @{N='y'; E={$_.y}} |
-    Sort-Object x, y
+    Sort-Object x, y)
 $indexed = @()
 for ($i = 0; $i -lt $mons.Count; $i++) {
     $indexed += [pscustomobject]@{ index = $i; hw = $mons[$i].hw; x = $mons[$i].x; y = $mons[$i].y }
@@ -400,9 +521,12 @@ if ($desk) {
     }
 
     $note = "AUTO-GENERATED $(Get-Date -Format 'yyyy-MM-dd HH:mm') | profile=$($desk.Name) | $signature"
-    Set-WorkspacesBlock (Build-Body $bind $note)
-    $shown = (@($workspaceOrder | ForEach-Object { "$_=$($bind[$_])" })) -join ' '
-    Write-Log "Profile '$($desk.Name)' applied: $shown"
+    if (Set-WorkspacesBlock (Build-Body $bind $note)) {
+        $shown = (@($workspaceOrder | ForEach-Object { "$_=$($bind[$_])" })) -join ' '
+        Write-Log "Profile '$($desk.Name)' applied: $shown"
+    } else {
+        Write-Log "Profile '$($desk.Name)' NOT applied; GlazeWM restarts with the probe config."
+    }
     if ($missing.Count -gt 0) {
         Write-Log "Unresolved profile targets, sent to the laptop: $($missing -join ', ')"
     }
@@ -422,7 +546,9 @@ elseif ($laptop) {
     }
 
     $note = "AUTO-GENERATED $(Get-Date -Format 'yyyy-MM-dd HH:mm') | profile=none (generic) | $signature"
-    Set-WorkspacesBlock (Build-Body $bind $note)
+    if (-not (Set-WorkspacesBlock (Build-Body $bind $note))) {
+        Write-Log 'Generic bindings NOT applied; GlazeWM restarts with the probe config.'
+    }
     Write-Log "No profile for [$signature]. Generic rule: laptop(idx $laptopIdx) -> 0,1,2,3,7,8,9 ; externals(idx $($externalIdx -join ',')) -> 4,5,6"
 }
 else {
@@ -433,4 +559,6 @@ else {
 
 # --- 4. Restart with the computed bindings, then supervise for the session ---
 Stop-Glaze
+# Config writes are done. Let the next run in, so it can take over from us.
+Exit-Setup
 exit (Invoke-Supervisor)
